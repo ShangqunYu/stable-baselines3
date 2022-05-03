@@ -72,12 +72,14 @@ def evaluate_policy(
     n_envs = env.num_envs
     episode_rewards = []
     episode_lengths = []
+    episode_sparserewards = []
 
     episode_counts = np.zeros(n_envs, dtype="int")
     # Divides episodes among different sub environments in the vector as evenly as possible
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
     current_rewards = np.zeros(n_envs)
+    current_sparserewards = np.zeros(n_envs)
     current_lengths = np.zeros(n_envs, dtype="int")
     observations = env.reset()
     states = None
@@ -86,6 +88,7 @@ def evaluate_policy(
         actions, states = model.predict(observations, state=states, episode_start=episode_starts, deterministic=deterministic)
         observations, rewards, dones, infos = env.step(actions)
         current_rewards += rewards
+
         current_lengths += 1
         for i in range(n_envs):
             if episode_counts[i] < episode_count_targets[i]:
@@ -94,6 +97,7 @@ def evaluate_policy(
                 reward = rewards[i]
                 done = dones[i]
                 info = infos[i]
+                sparse_reward = info['sparse_reward']
                 episode_starts[i] = done
 
                 if callback is not None:
@@ -110,10 +114,12 @@ def evaluate_policy(
                             # has been wrapped with it. Use those rewards instead.
                             episode_rewards.append(info["episode"]["r"])
                             episode_lengths.append(info["episode"]["l"])
+                            episode_sparserewards.append(info["episode"]["sp"])
                             # Only increment at the real end of an episode
                             episode_counts[i] += 1
                     else:
                         episode_rewards.append(current_rewards[i])
+                        episode_sparserewards.append(sparse_reward)
                         episode_lengths.append(current_lengths[i])
                         episode_counts[i] += 1
                     current_rewards[i] = 0
@@ -124,8 +130,9 @@ def evaluate_policy(
 
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
+    mean_sparserewards = np.mean(episode_sparserewards)
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
-        return episode_rewards, episode_lengths
-    return mean_reward, std_reward
+        return episode_sparserewards, episode_lengths
+    return mean_sparserewards, std_reward
